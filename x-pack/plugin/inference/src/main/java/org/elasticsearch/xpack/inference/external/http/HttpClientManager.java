@@ -7,12 +7,20 @@
 
 package org.elasticsearch.xpack.inference.external.http;
 
+import org.apache.http.config.Registry;
+import org.apache.http.config.RegistryBuilder;
+import org.apache.http.conn.ssl.NoopHostnameVerifier;
+import org.apache.http.conn.ssl.TrustAllStrategy;
 import org.apache.http.impl.nio.conn.PoolingNHttpClientConnectionManager;
 import org.apache.http.impl.nio.reactor.DefaultConnectingIOReactor;
 import org.apache.http.impl.nio.reactor.IOReactorConfig;
+import org.apache.http.nio.conn.NoopIOSessionStrategy;
+import org.apache.http.nio.conn.SchemeIOSessionStrategy;
+import org.apache.http.nio.conn.ssl.SSLIOSessionStrategy;
 import org.apache.http.nio.reactor.ConnectingIOReactor;
 import org.apache.http.nio.reactor.IOReactorException;
 import org.apache.http.pool.PoolStats;
+import org.apache.http.ssl.SSLContextBuilder;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.elasticsearch.ElasticsearchException;
@@ -23,8 +31,12 @@ import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.threadpool.ThreadPool;
 import org.elasticsearch.xpack.inference.logging.ThrottlerManager;
 
+import javax.net.ssl.SSLContext;
 import java.io.Closeable;
 import java.io.IOException;
+import java.security.KeyManagementException;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
 import java.util.List;
 
 import static org.elasticsearch.core.Strings.format;
@@ -95,6 +107,7 @@ public class HttpClientManager implements Closeable {
         ThrottlerManager throttlerManager
     ) {
         PoolingNHttpClientConnectionManager connectionManager = createConnectionManager();
+//        PoolingNHttpClientConnectionManager eisConnectionManager = createConnectionManager(tlsConfiguration);
         return new HttpClientManager(settings, connectionManager, threadPool, clusterService, throttlerManager);
     }
 
@@ -123,6 +136,7 @@ public class HttpClientManager implements Closeable {
 
     private static PoolingNHttpClientConnectionManager createConnectionManager() {
         ConnectingIOReactor ioReactor;
+        Registry<SSLIOSessionStrategy> sessionStrategyRegistry;
         try {
             var configBuilder = IOReactorConfig.custom().setSoKeepAlive(true);
             ioReactor = new DefaultConnectingIOReactor(configBuilder.build());
@@ -132,13 +146,21 @@ public class HttpClientManager implements Closeable {
             throw new ElasticsearchException(message, e);
         }
 
+        SSLContext sslContext = getTrustAllSslStrategy();
+
+        Registry<SchemeIOSessionStrategy> registry = RegistryBuilder.<SchemeIOSessionStrategy>create()
+            .register("http", NoopIOSessionStrategy.INSTANCE)
+            .register("https", new SSLIOSessionStrategy(sslContext, NoopHostnameVerifier.INSTANCE))
+            .build();
+
         /*
           The max time to live for open connections in the pool will not be set because we don't specify a ttl in the constructor.
           This meaning that there should not be a limit.
           We can control the TTL dynamically using the IdleConnectionEvictor and keep-alive strategy.
           The max idle time cluster setting will dictate how much time an open connection can be unused for before it can be closed.
          */
-        return new PoolingNHttpClientConnectionManager(ioReactor);
+
+        return new PoolingNHttpClientConnectionManager(ioReactor, null, registry);
     }
 
     private void addSettingsUpdateConsumers(ClusterService clusterService) {
@@ -187,6 +209,19 @@ public class HttpClientManager implements Closeable {
 
     private void setMaxRouteConnections(int maxConnections) {
         connectionManager.setDefaultMaxPerRoute(maxConnections);
+    }
+
+    private static SSLContext getTrustAllSslStrategy() {
+        try {
+            SSLContext sslContext = SSLContextBuilder.create()
+                .loadTrustMaterial(new TrustAllStrategy()) // Trust all certificates
+                .build();
+
+            return sslContext;
+        } catch (NoSuchAlgorithmException | KeyStoreException | KeyManagementException e) {
+
+        }
+        return null;
     }
 
     // This is only used for testing

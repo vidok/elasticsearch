@@ -8,9 +8,14 @@
 package org.elasticsearch.xpack.inference.external.request.elastic;
 
 import org.apache.http.HttpHeaders;
+import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpPost;
+import org.apache.http.conn.ssl.NoopHostnameVerifier;
+import org.apache.http.conn.ssl.TrustAllStrategy;
 import org.apache.http.entity.ByteArrayEntity;
+import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicHeader;
+import org.apache.http.ssl.SSLContextBuilder;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.tasks.Task;
 import org.elasticsearch.xcontent.XContentType;
@@ -22,6 +27,9 @@ import org.elasticsearch.xpack.inference.telemetry.TraceContext;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyManagementException;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
 import java.util.Objects;
 
 public class ElasticInferenceServiceSparseEmbeddingsRequest implements ElasticInferenceServiceRequest {
@@ -34,6 +42,8 @@ public class ElasticInferenceServiceSparseEmbeddingsRequest implements ElasticIn
     private final Truncator truncator;
 
     private final TraceContext traceContext;
+
+    private HttpClient httpClient;
 
     public ElasticInferenceServiceSparseEmbeddingsRequest(
         Truncator truncator,
@@ -50,6 +60,7 @@ public class ElasticInferenceServiceSparseEmbeddingsRequest implements ElasticIn
 
     @Override
     public HttpRequest createHttpRequest() {
+
         var httpPost = new HttpPost(uri);
         var requestEntity = Strings.toString(new ElasticInferenceServiceSparseEmbeddingsRequestEntity(truncationResult.input()));
 
