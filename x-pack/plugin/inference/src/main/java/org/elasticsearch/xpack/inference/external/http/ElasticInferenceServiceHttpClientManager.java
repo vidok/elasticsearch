@@ -29,8 +29,12 @@ import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.threadpool.ThreadPool;
+import org.elasticsearch.xpack.core.XPackPlugin;
+import org.elasticsearch.xpack.core.ssl.SSLService;
+import org.elasticsearch.common.ssl.SslConfiguration;
 import org.elasticsearch.xpack.inference.logging.ThrottlerManager;
 
+import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
 import java.io.Closeable;
 import java.io.IOException;
@@ -41,7 +45,7 @@ import java.util.List;
 
 import static org.elasticsearch.core.Strings.format;
 
-public class HttpClientManager implements Closeable {
+public class ElasticInferenceServiceHttpClientManager implements Closeable {
     private static final Logger logger = LogManager.getLogger(HttpClientManager.class);
     /**
      * The maximum number of total connections the connection pool can lease to all routes.
@@ -100,17 +104,7 @@ public class HttpClientManager implements Closeable {
     private volatile TimeValue evictionInterval;
     private volatile TimeValue connectionMaxIdle;
 
-    public static HttpClientManager create(
-        Settings settings,
-        ThreadPool threadPool,
-        ClusterService clusterService,
-        ThrottlerManager throttlerManager
-    ) {
-        PoolingNHttpClientConnectionManager connectionManager = createConnectionManager();
-        return new HttpClientManager(settings, connectionManager, threadPool, clusterService, throttlerManager);
-    }
-
-    public static HttpClientManager create(
+    public static ElasticInferenceServiceHttpClientManager create(
         Settings settings,
         ThreadPool threadPool,
         ClusterService clusterService,
@@ -118,33 +112,16 @@ public class HttpClientManager implements Closeable {
         SSLContext sslContext
     ) {
         PoolingNHttpClientConnectionManager connectionManager = createConnectionManager();
-        return new HttpClientManager(settings, connectionManager, threadPool, clusterService, throttlerManager, sslContext);
+        return new ElasticInferenceServiceHttpClientManager(settings,
+            connectionManager,
+            threadPool,
+            clusterService,
+            throttlerManager,
+            sslContext);
     }
 
     // Default for testing
-    HttpClientManager(
-        Settings settings,
-        PoolingNHttpClientConnectionManager connectionManager,
-        ThreadPool threadPool,
-        ClusterService clusterService,
-        ThrottlerManager throttlerManager
-    ) {
-        this.threadPool = threadPool;
-
-        this.connectionManager = connectionManager;
-        setMaxConnections(MAX_TOTAL_CONNECTIONS.get(settings));
-        setMaxRouteConnections(MAX_ROUTE_CONNECTIONS.get(settings));
-
-        this.httpClient = HttpClient.create(new HttpSettings(settings, clusterService), threadPool, connectionManager, throttlerManager);
-
-        this.evictionInterval = CONNECTION_EVICTION_THREAD_INTERVAL_SETTING.get(settings);
-        this.connectionMaxIdle = CONNECTION_MAX_IDLE_TIME_SETTING.get(settings);
-        connectionEvictor = createConnectionEvictor();
-
-        this.addSettingsUpdateConsumers(clusterService);
-    }
-
-    HttpClientManager(
+    ElasticInferenceServiceHttpClientManager(
         Settings settings,
         PoolingNHttpClientConnectionManager connectionManager,
         ThreadPool threadPool,
@@ -158,7 +135,7 @@ public class HttpClientManager implements Closeable {
         setMaxConnections(MAX_TOTAL_CONNECTIONS.get(settings));
         setMaxRouteConnections(MAX_ROUTE_CONNECTIONS.get(settings));
 
-        this.httpClient = HttpClient.create(new HttpSettings(settings, clusterService), threadPool, connectionManager, throttlerManager);
+        this.httpClient = HttpClient.create(new HttpSettings(settings, clusterService), threadPool, connectionManager, throttlerManager, sslContext);
 
         this.evictionInterval = CONNECTION_EVICTION_THREAD_INTERVAL_SETTING.get(settings);
         this.connectionMaxIdle = CONNECTION_MAX_IDLE_TIME_SETTING.get(settings);
@@ -278,3 +255,4 @@ public class HttpClientManager implements Closeable {
         connectionEvictor.setMaxIdleTime(connectionMaxIdle);
     }
 }
+

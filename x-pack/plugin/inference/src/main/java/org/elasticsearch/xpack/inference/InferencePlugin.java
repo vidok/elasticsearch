@@ -19,6 +19,7 @@ import org.elasticsearch.common.settings.IndexScopedSettings;
 import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.settings.SettingsFilter;
+import org.elasticsearch.common.ssl.SslConfiguration;
 import org.elasticsearch.core.IOUtils;
 import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.features.NodeFeature;
@@ -41,6 +42,7 @@ import org.elasticsearch.threadpool.ExecutorBuilder;
 import org.elasticsearch.threadpool.ScalingExecutorBuilder;
 import org.elasticsearch.xcontent.ParseField;
 import org.elasticsearch.xpack.core.ClientHelper;
+import org.elasticsearch.xpack.core.XPackPlugin;
 import org.elasticsearch.xpack.core.action.XPackUsageFeatureAction;
 import org.elasticsearch.xpack.core.inference.action.DeleteInferenceEndpointAction;
 import org.elasticsearch.xpack.core.inference.action.GetInferenceDiagnosticsAction;
@@ -49,6 +51,7 @@ import org.elasticsearch.xpack.core.inference.action.GetInferenceServicesAction;
 import org.elasticsearch.xpack.core.inference.action.InferenceAction;
 import org.elasticsearch.xpack.core.inference.action.PutInferenceModelAction;
 import org.elasticsearch.xpack.core.inference.action.UpdateInferenceModelAction;
+import org.elasticsearch.xpack.core.ssl.SSLService;
 import org.elasticsearch.xpack.inference.action.TransportDeleteInferenceEndpointAction;
 import org.elasticsearch.xpack.inference.action.TransportGetInferenceDiagnosticsAction;
 import org.elasticsearch.xpack.inference.action.TransportGetInferenceModelAction;
@@ -60,9 +63,11 @@ import org.elasticsearch.xpack.inference.action.TransportUpdateInferenceModelAct
 import org.elasticsearch.xpack.inference.action.filter.ShardBulkInferenceActionFilter;
 import org.elasticsearch.xpack.inference.common.Truncator;
 import org.elasticsearch.xpack.inference.external.amazonbedrock.AmazonBedrockRequestSender;
+import org.elasticsearch.xpack.inference.external.http.ElasticInferenceServiceHttpClientManager;
 import org.elasticsearch.xpack.inference.external.http.HttpClientManager;
 import org.elasticsearch.xpack.inference.external.http.HttpSettings;
 import org.elasticsearch.xpack.inference.external.http.retry.RetrySettings;
+import org.elasticsearch.xpack.inference.external.http.sender.ElasticInferenceServiceRequestSender;
 import org.elasticsearch.xpack.inference.external.http.sender.HttpRequestSender;
 import org.elasticsearch.xpack.inference.external.http.sender.RequestExecutorServiceSettings;
 import org.elasticsearch.xpack.inference.logging.ThrottlerManager;
@@ -103,6 +108,7 @@ import org.elasticsearch.xpack.inference.services.mistral.MistralService;
 import org.elasticsearch.xpack.inference.services.openai.OpenAiService;
 import org.elasticsearch.xpack.inference.telemetry.InferenceStats;
 
+import javax.net.ssl.SSLContext;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -138,6 +144,7 @@ public class InferencePlugin extends Plugin implements ActionPlugin, ExtensibleP
     private final Settings settings;
     private final SetOnce<HttpRequestSender.Factory> httpFactory = new SetOnce<>();
     private final SetOnce<AmazonBedrockRequestSender.Factory> amazonBedrockFactory = new SetOnce<>();
+    private final SetOnce<ElasticInferenceServiceRequestSender.Factory> elasicInferenceServiceFactory = new SetOnce<>();
     private final SetOnce<ServiceComponents> serviceComponents = new SetOnce<>();
     private final SetOnce<ElasticInferenceServiceComponents> eisComponents = new SetOnce<>();
     private final SetOnce<InferenceServiceRegistry> inferenceServiceRegistry = new SetOnce<>();
@@ -208,11 +215,22 @@ public class InferencePlugin extends Plugin implements ActionPlugin, ExtensibleP
         inferenceServices.add(this::getInferenceServiceFactories);
 
         if (ElasticInferenceServiceFeature.ELASTIC_INFERENCE_SERVICE_FEATURE_FLAG.isEnabled()) {
+            SSLService sslService = XPackPlugin.getSharedSslService();
+            SslConfiguration sslConfiguration = sslService.getSSLConfiguration("inference.elastic.ssl.");
+            SSLContext sslContext = sslConfiguration.createSslContext();
+
+            var elasticInferenceServiceHttpClientManager = ElasticInferenceServiceHttpClientManager.create(settings, services.threadPool(), services.clusterService(), throttlerManager, sslContext);
+            var elasticInferenceServiceRequestSenderFactory = new ElasticInferenceServiceRequestSender.Factory(
+                serviceComponents.get(), elasticInferenceServiceHttpClientManager, services.clusterService());
+
+            elasicInferenceServiceFactory.set(elasticInferenceServiceRequestSenderFactory);
+
             ElasticInferenceServiceSettings eisSettings = new ElasticInferenceServiceSettings(settings);
             eisComponents.set(new ElasticInferenceServiceComponents(eisSettings.getEisGatewayUrl()));
 
             inferenceServices.add(
-                () -> List.of(context -> new ElasticInferenceService(httpFactory.get(), serviceComponents.get(), eisComponents.get()))
+                () -> List.of(context -> new ElasticInferenceService(
+                    httpFactory.get(), serviceComponents.get(), eisComponents.get(), elasicInferenceServiceFactory.get()))
             );
         }
 

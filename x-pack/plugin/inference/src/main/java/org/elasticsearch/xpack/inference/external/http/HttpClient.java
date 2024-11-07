@@ -50,6 +50,7 @@ import static org.elasticsearch.xpack.inference.InferencePlugin.UTILITY_THREAD_P
 /**
  * Provides a wrapper around a {@link CloseableHttpAsyncClient} to move the responses to a separate thread for processing.
  */
+@SuppressWarnings("checkstyle:LineLength")
 public class HttpClient implements Closeable {
     private static final Logger logger = LogManager.getLogger(HttpClient.class);
 
@@ -76,15 +77,21 @@ public class HttpClient implements Closeable {
         return new HttpClient(settings, client, threadPool, throttlerManager);
     }
 
+    public static HttpClient create(
+        HttpSettings settings,
+        ThreadPool threadPool,
+        PoolingNHttpClientConnectionManager connectionManager,
+        ThrottlerManager throttlerManager,
+        SSLContext sslContext
+    ) {
+        CloseableHttpAsyncClient client = createAsyncClient(Objects.requireNonNull(connectionManager), sslContext);
+
+        return new HttpClient(settings, client, threadPool, throttlerManager);
+    }
+
     private static CloseableHttpAsyncClient createAsyncClient(PoolingNHttpClientConnectionManager connectionManager) {
         HttpAsyncClientBuilder clientBuilder = HttpAsyncClientBuilder.create();
         clientBuilder.setConnectionManager(connectionManager);
-
-//       if certs are present
-//           clientBuilder.setSSLContext(sslContext);
-//           clientBuilder.setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE);
-//       else
-//         disable certs validation
 
         // The apache client will be shared across all connections because it can be expensive to create it
         // so we don't want to support cookies to avoid accidental authentication for unauthorized users
@@ -125,6 +132,18 @@ public class HttpClient implements Closeable {
           https://stackoverflow.com/questions/64676200/understanding-the-lifecycle-of-a-connection-managed-by-poolinghttpclientconnecti
          */
         return null;
+    }
+
+    private static CloseableHttpAsyncClient createAsyncClient(PoolingNHttpClientConnectionManager connectionManager,
+                                                              SSLContext sslContext) {
+        HttpAsyncClientBuilder clientBuilder = HttpAsyncClientBuilder.create();
+        clientBuilder.setConnectionManager(connectionManager);
+        clientBuilder.setSSLContext(sslContext);
+
+        // The apache client will be shared across all connections because it can be expensive to create it
+        // so we don't want to support cookies to avoid accidental authentication for unauthorized users
+        clientBuilder.disableCookieManagement();
+        return clientBuilder.build();
     }
 
     // Default for testing
