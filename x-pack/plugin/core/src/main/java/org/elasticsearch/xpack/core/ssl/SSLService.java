@@ -595,6 +595,7 @@ public class SSLService {
         sslSettingsMap.putAll(getMonitoringExporterSettings(settings));
         sslSettingsMap.put(WatcherField.EMAIL_NOTIFICATION_SSL_PREFIX, settings.getByPrefix(WatcherField.EMAIL_NOTIFICATION_SSL_PREFIX));
         sslSettingsMap.put(XPackSettings.TRANSPORT_SSL_PREFIX, settings.getByPrefix(XPackSettings.TRANSPORT_SSL_PREFIX));
+        sslSettingsMap.put(XPackSettings.EIS_SSL_PREFIX, settings.getByPrefix(XPackSettings.EIS_SSL_PREFIX));
         sslSettingsMap.putAll(getTransportProfileSSLSettings(settings));
         // Only build remote cluster server SSL if the port is enabled
         if (REMOTE_CLUSTER_SERVER_ENABLED.get(settings)) {

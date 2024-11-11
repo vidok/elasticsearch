@@ -29,12 +29,8 @@ import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.threadpool.ThreadPool;
-import org.elasticsearch.xpack.core.XPackPlugin;
-import org.elasticsearch.xpack.core.ssl.SSLService;
-import org.elasticsearch.common.ssl.SslConfiguration;
 import org.elasticsearch.xpack.inference.logging.ThrottlerManager;
 
-import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
 import java.io.Closeable;
 import java.io.IOException;
@@ -54,7 +50,7 @@ public class ElasticInferenceServiceHttpClientManager implements Closeable {
      * https://stackoverflow.com/questions/30989637/how-to-decide-optimal-settings-for-setmaxtotal-and-setdefaultmaxperroute
      */
     public static final Setting<Integer> MAX_TOTAL_CONNECTIONS = Setting.intSetting(
-        "xpack.inference.http.max_total_connections",
+        "xpack.inference.elastic.http.max_total_connections",
         50, // default
         1, // min
         Setting.Property.NodeScope,
@@ -65,7 +61,7 @@ public class ElasticInferenceServiceHttpClientManager implements Closeable {
      * The max number of connections a single route can lease.
      */
     public static final Setting<Integer> MAX_ROUTE_CONNECTIONS = Setting.intSetting(
-        "xpack.inference.http.max_route_connections",
+        "xpack.inference.elastic.http.max_route_connections",
         20, // default
         1, // min
         Setting.Property.NodeScope,
@@ -74,7 +70,7 @@ public class ElasticInferenceServiceHttpClientManager implements Closeable {
 
     private static final TimeValue DEFAULT_CONNECTION_EVICTION_THREAD_INTERVAL_TIME = TimeValue.timeValueMinutes(1);
     public static final Setting<TimeValue> CONNECTION_EVICTION_THREAD_INTERVAL_SETTING = Setting.timeSetting(
-        "xpack.inference.http.connection_eviction_interval",
+        "xpack.inference.elastic.http.connection_eviction_interval",
         DEFAULT_CONNECTION_EVICTION_THREAD_INTERVAL_TIME,
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
@@ -90,7 +86,7 @@ public class ElasticInferenceServiceHttpClientManager implements Closeable {
      * https://stackoverflow.com/questions/64676200/understanding-the-lifecycle-of-a-connection-managed-by-poolinghttpclientconnecti
      */
     public static final Setting<TimeValue> CONNECTION_MAX_IDLE_TIME_SETTING = Setting.timeSetting(
-        "xpack.inference.http.connection_eviction_max_idle_time",
+        "xpack.inference.elastic.http.connection_eviction_max_idle_time",
         DEFAULT_CONNECTION_MAX_IDLE_TIME_SETTING,
         Setting.Property.NodeScope,
         Setting.Property.Dynamic

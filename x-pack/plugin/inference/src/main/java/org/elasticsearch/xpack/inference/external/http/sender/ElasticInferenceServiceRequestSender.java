@@ -58,13 +58,16 @@ public class ElasticInferenceServiceRequestSender implements Sender {
         }
 
         public Sender createSender() {
-            return new ElasticInferenceServiceRequestSender(
+            var sender = new ElasticInferenceServiceRequestSender(
                 serviceComponents.threadPool(),
                 httpClientManager,
                 clusterService,
                 serviceComponents.settings(),
                 requestSender
             );
+
+            sender.start();
+            return sender;
         }
     }
 

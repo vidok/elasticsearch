@@ -141,7 +141,7 @@ public class InferencePlugin extends Plugin implements ActionPlugin, ExtensibleP
     public static final String NAME = "inference";
     public static final String UTILITY_THREAD_POOL_NAME = "inference_utility";
 
-    private final Settings settings;
+    private final Settings  settings;
     private final SetOnce<HttpRequestSender.Factory> httpFactory = new SetOnce<>();
     private final SetOnce<AmazonBedrockRequestSender.Factory> amazonBedrockFactory = new SetOnce<>();
     private final SetOnce<ElasticInferenceServiceRequestSender.Factory> elasicInferenceServiceFactory = new SetOnce<>();
@@ -216,7 +216,7 @@ public class InferencePlugin extends Plugin implements ActionPlugin, ExtensibleP
 
         if (ElasticInferenceServiceFeature.ELASTIC_INFERENCE_SERVICE_FEATURE_FLAG.isEnabled()) {
             SSLService sslService = XPackPlugin.getSharedSslService();
-            SslConfiguration sslConfiguration = sslService.getSSLConfiguration("inference.elastic.ssl.");
+            SslConfiguration sslConfiguration = sslService.getSSLConfiguration("xpack.security.inference.elastic.ssl.");
             SSLContext sslContext = sslConfiguration.createSslContext();
 
             var elasticInferenceServiceHttpClientManager = ElasticInferenceServiceHttpClientManager.create(settings, services.threadPool(), services.clusterService(), throttlerManager, sslContext);
@@ -354,6 +354,7 @@ public class InferencePlugin extends Plugin implements ActionPlugin, ExtensibleP
         return Stream.of(
             HttpSettings.getSettingsDefinitions(),
             HttpClientManager.getSettingsDefinitions(),
+            ElasticInferenceServiceHttpClientManager.getSettingsDefinitions(),
             ThrottlerManager.getSettingsDefinitions(),
             RetrySettings.getSettingsDefinitions(),
             ElasticInferenceServiceSettings.getSettingsDefinitions(),
