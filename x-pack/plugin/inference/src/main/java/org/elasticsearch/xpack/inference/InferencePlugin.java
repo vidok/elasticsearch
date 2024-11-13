@@ -108,6 +108,7 @@ import org.elasticsearch.xpack.inference.services.mistral.MistralService;
 import org.elasticsearch.xpack.inference.services.openai.OpenAiService;
 import org.elasticsearch.xpack.inference.telemetry.InferenceStats;
 
+import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -216,10 +217,11 @@ public class InferencePlugin extends Plugin implements ActionPlugin, ExtensibleP
 
         if (ElasticInferenceServiceFeature.ELASTIC_INFERENCE_SERVICE_FEATURE_FLAG.isEnabled()) {
             SSLService sslService = XPackPlugin.getSharedSslService();
-            SslConfiguration sslConfiguration = sslService.getSSLConfiguration("xpack.security.inference.elastic.ssl.");
-            SSLContext sslContext = sslConfiguration.createSslContext();
+            final SslConfiguration sslConfiguration = sslService.getSSLConfiguration("xpack.security.inference.elastic.ssl.");
+            final SSLContext sslContext = sslService.sslContext(sslConfiguration);
+            final HostnameVerifier verifier = SSLService.getHostnameVerifier(sslConfiguration);
 
-            var elasticInferenceServiceHttpClientManager = ElasticInferenceServiceHttpClientManager.create(settings, services.threadPool(), services.clusterService(), throttlerManager, sslContext);
+            var elasticInferenceServiceHttpClientManager = ElasticInferenceServiceHttpClientManager.create(settings, services.threadPool(), services.clusterService(), throttlerManager, sslContext, verifier);
             var elasticInferenceServiceRequestSenderFactory = new ElasticInferenceServiceRequestSender.Factory(
                 serviceComponents.get(), elasticInferenceServiceHttpClientManager, services.clusterService());
 

@@ -169,7 +169,7 @@ public class HttpClientManager implements Closeable {
 
     private static PoolingNHttpClientConnectionManager createConnectionManager() {
         ConnectingIOReactor ioReactor;
-        Registry<SSLIOSessionStrategy> sessionStrategyRegistry;
+
         try {
             var configBuilder = IOReactorConfig.custom().setSoKeepAlive(true);
             ioReactor = new DefaultConnectingIOReactor(configBuilder.build());
@@ -179,13 +179,6 @@ public class HttpClientManager implements Closeable {
             throw new ElasticsearchException(message, e);
         }
 
-        SSLContext sslContext = getTrustAllSslStrategy();
-
-        Registry<SchemeIOSessionStrategy> registry = RegistryBuilder.<SchemeIOSessionStrategy>create()
-            .register("http", NoopIOSessionStrategy.INSTANCE)
-            .register("https", new SSLIOSessionStrategy(sslContext, NoopHostnameVerifier.INSTANCE))
-            .build();
-
         /*
           The max time to live for open connections in the pool will not be set because we don't specify a ttl in the constructor.
           This meaning that there should not be a limit.
@@ -193,7 +186,7 @@ public class HttpClientManager implements Closeable {
           The max idle time cluster setting will dictate how much time an open connection can be unused for before it can be closed.
          */
 
-        return new PoolingNHttpClientConnectionManager(ioReactor, null, registry);
+        return new PoolingNHttpClientConnectionManager(ioReactor);
     }
 
     private void addSettingsUpdateConsumers(ClusterService clusterService) {
@@ -242,19 +235,6 @@ public class HttpClientManager implements Closeable {
 
     private void setMaxRouteConnections(int maxConnections) {
         connectionManager.setDefaultMaxPerRoute(maxConnections);
-    }
-
-    private static SSLContext getTrustAllSslStrategy() {
-        try {
-            SSLContext sslContext = SSLContextBuilder.create()
-                .loadTrustMaterial(new TrustAllStrategy()) // Trust all certificates
-                .build();
-
-            return sslContext;
-        } catch (NoSuchAlgorithmException | KeyStoreException | KeyManagementException e) {
-
-        }
-        return null;
     }
 
     // This is only used for testing

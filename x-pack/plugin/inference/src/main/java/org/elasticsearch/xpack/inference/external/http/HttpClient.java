@@ -21,11 +21,14 @@ import org.apache.http.ssl.SSLContextBuilder;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.elasticsearch.action.ActionListener;
+import org.elasticsearch.common.ssl.SslConfiguration;
 import org.elasticsearch.threadpool.ThreadPool;
 import org.elasticsearch.xpack.core.common.socket.SocketAccess;
+import org.elasticsearch.xpack.core.ssl.SSLService;
 import org.elasticsearch.xpack.inference.external.request.HttpRequest;
 import org.elasticsearch.xpack.inference.logging.ThrottlerManager;
 
+import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.TrustManager;
@@ -77,41 +80,13 @@ public class HttpClient implements Closeable {
         return new HttpClient(settings, client, threadPool, throttlerManager);
     }
 
-    public static HttpClient create(
-        HttpSettings settings,
-        ThreadPool threadPool,
-        PoolingNHttpClientConnectionManager connectionManager,
-        ThrottlerManager throttlerManager,
-        SSLContext sslContext
-    ) {
-        CloseableHttpAsyncClient client = createAsyncClient(Objects.requireNonNull(connectionManager), sslContext);
-
-        return new HttpClient(settings, client, threadPool, throttlerManager);
-    }
-
     private static CloseableHttpAsyncClient createAsyncClient(PoolingNHttpClientConnectionManager connectionManager) {
         HttpAsyncClientBuilder clientBuilder = HttpAsyncClientBuilder.create();
         clientBuilder.setConnectionManager(connectionManager);
-
         // The apache client will be shared across all connections because it can be expensive to create it
         // so we don't want to support cookies to avoid accidental authentication for unauthorized users
         clientBuilder.disableCookieManagement();
-        try {
-            SSLContext sslContext = SSLContextBuilder.create()
-                .loadTrustMaterial(new TrustAllStrategy())
-                .build();
 
-            clientBuilder.setSSLContext(sslContext);
-            clientBuilder.setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE);
-
-            logger.info("Setting up certs");
-
-            return clientBuilder.build();
-        } catch (NoSuchAlgorithmException | KeyManagementException | KeyStoreException e) {
-//            // Handle exceptions appropriately, such as logging them
-            logger.info("ERROR IN CERTS");
-            e.printStackTrace(); // or log.error("Error initializing client", e);
-        }
         /*
           By default, if a keep-alive header is not returned by the server then the connection will be kept alive
           indefinitely. In this situation the default keep alive strategy will return -1. Since we use a connection eviction thread,
@@ -131,18 +106,6 @@ public class HttpClient implements Closeable {
           And this stackoverflow question:
           https://stackoverflow.com/questions/64676200/understanding-the-lifecycle-of-a-connection-managed-by-poolinghttpclientconnecti
          */
-        return null;
-    }
-
-    private static CloseableHttpAsyncClient createAsyncClient(PoolingNHttpClientConnectionManager connectionManager,
-                                                              SSLContext sslContext) {
-        HttpAsyncClientBuilder clientBuilder = HttpAsyncClientBuilder.create();
-        clientBuilder.setConnectionManager(connectionManager);
-        clientBuilder.setSSLContext(sslContext);
-
-        // The apache client will be shared across all connections because it can be expensive to create it
-        // so we don't want to support cookies to avoid accidental authentication for unauthorized users
-        clientBuilder.disableCookieManagement();
         return clientBuilder.build();
     }
 

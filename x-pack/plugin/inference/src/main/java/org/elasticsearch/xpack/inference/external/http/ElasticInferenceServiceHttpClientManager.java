@@ -27,10 +27,13 @@ import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.settings.Setting;
 import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.common.ssl.SslConfiguration;
 import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.threadpool.ThreadPool;
+import org.elasticsearch.xpack.core.ssl.SSLService;
 import org.elasticsearch.xpack.inference.logging.ThrottlerManager;
 
+import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
 import java.io.Closeable;
 import java.io.IOException;
@@ -105,15 +108,15 @@ public class ElasticInferenceServiceHttpClientManager implements Closeable {
         ThreadPool threadPool,
         ClusterService clusterService,
         ThrottlerManager throttlerManager,
-        SSLContext sslContext
+        SSLContext sslContext,
+        HostnameVerifier verifier
     ) {
-        PoolingNHttpClientConnectionManager connectionManager = createConnectionManager();
+        PoolingNHttpClientConnectionManager connectionManager = createConnectionManager(sslContext, verifier);
         return new ElasticInferenceServiceHttpClientManager(settings,
             connectionManager,
             threadPool,
             clusterService,
-            throttlerManager,
-            sslContext);
+            throttlerManager);
     }
 
     // Default for testing
@@ -122,8 +125,7 @@ public class ElasticInferenceServiceHttpClientManager implements Closeable {
         PoolingNHttpClientConnectionManager connectionManager,
         ThreadPool threadPool,
         ClusterService clusterService,
-        ThrottlerManager throttlerManager,
-        SSLContext sslContext
+        ThrottlerManager throttlerManager
     ) {
         this.threadPool = threadPool;
 
@@ -131,7 +133,10 @@ public class ElasticInferenceServiceHttpClientManager implements Closeable {
         setMaxConnections(MAX_TOTAL_CONNECTIONS.get(settings));
         setMaxRouteConnections(MAX_ROUTE_CONNECTIONS.get(settings));
 
-        this.httpClient = HttpClient.create(new HttpSettings(settings, clusterService), threadPool, connectionManager, throttlerManager, sslContext);
+        this.httpClient = HttpClient.create(new HttpSettings(settings, clusterService),
+            threadPool,
+            connectionManager,
+            throttlerManager);
 
         this.evictionInterval = CONNECTION_EVICTION_THREAD_INTERVAL_SETTING.get(settings);
         this.connectionMaxIdle = CONNECTION_MAX_IDLE_TIME_SETTING.get(settings);
@@ -140,9 +145,8 @@ public class ElasticInferenceServiceHttpClientManager implements Closeable {
         this.addSettingsUpdateConsumers(clusterService);
     }
 
-    private static PoolingNHttpClientConnectionManager createConnectionManager() {
+    private static PoolingNHttpClientConnectionManager createConnectionManager(SSLContext sslContext, HostnameVerifier verifier) {
         ConnectingIOReactor ioReactor;
-        Registry<SSLIOSessionStrategy> sessionStrategyRegistry;
         try {
             var configBuilder = IOReactorConfig.custom().setSoKeepAlive(true);
             ioReactor = new DefaultConnectingIOReactor(configBuilder.build());
@@ -152,11 +156,9 @@ public class ElasticInferenceServiceHttpClientManager implements Closeable {
             throw new ElasticsearchException(message, e);
         }
 
-        SSLContext sslContext = getTrustAllSslStrategy();
-
         Registry<SchemeIOSessionStrategy> registry = RegistryBuilder.<SchemeIOSessionStrategy>create()
             .register("http", NoopIOSessionStrategy.INSTANCE)
-            .register("https", new SSLIOSessionStrategy(sslContext, NoopHostnameVerifier.INSTANCE))
+            .register("https", new SSLIOSessionStrategy(sslContext, verifier))
             .build();
 
         /*
@@ -215,19 +217,6 @@ public class ElasticInferenceServiceHttpClientManager implements Closeable {
 
     private void setMaxRouteConnections(int maxConnections) {
         connectionManager.setDefaultMaxPerRoute(maxConnections);
-    }
-
-    private static SSLContext getTrustAllSslStrategy() {
-        try {
-            SSLContext sslContext = SSLContextBuilder.create()
-                .loadTrustMaterial(new TrustAllStrategy()) // Trust all certificates
-                .build();
-
-            return sslContext;
-        } catch (NoSuchAlgorithmException | KeyStoreException | KeyManagementException e) {
-
-        }
-        return null;
     }
 
     // This is only used for testing
