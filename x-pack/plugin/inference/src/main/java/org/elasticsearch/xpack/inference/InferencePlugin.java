@@ -7,6 +7,7 @@
 
 package org.elasticsearch.xpack.inference;
 
+import org.apache.http.nio.conn.ssl.SSLIOSessionStrategy;
 import org.apache.lucene.util.SetOnce;
 import org.elasticsearch.action.ActionRequest;
 import org.elasticsearch.action.ActionResponse;
@@ -22,6 +23,7 @@ import org.elasticsearch.common.settings.SettingsFilter;
 import org.elasticsearch.common.ssl.SslConfiguration;
 import org.elasticsearch.core.IOUtils;
 import org.elasticsearch.core.TimeValue;
+import org.elasticsearch.env.Environment;
 import org.elasticsearch.features.NodeFeature;
 import org.elasticsearch.index.mapper.Mapper;
 import org.elasticsearch.indices.SystemIndexDescriptor;
@@ -40,6 +42,7 @@ import org.elasticsearch.search.rank.RankBuilder;
 import org.elasticsearch.search.rank.RankDoc;
 import org.elasticsearch.threadpool.ExecutorBuilder;
 import org.elasticsearch.threadpool.ScalingExecutorBuilder;
+import org.elasticsearch.watcher.ResourceWatcherService;
 import org.elasticsearch.xcontent.ParseField;
 import org.elasticsearch.xpack.core.ClientHelper;
 import org.elasticsearch.xpack.core.XPackPlugin;
@@ -51,6 +54,7 @@ import org.elasticsearch.xpack.core.inference.action.GetInferenceServicesAction;
 import org.elasticsearch.xpack.core.inference.action.InferenceAction;
 import org.elasticsearch.xpack.core.inference.action.PutInferenceModelAction;
 import org.elasticsearch.xpack.core.inference.action.UpdateInferenceModelAction;
+import org.elasticsearch.xpack.core.ssl.SSLConfigurationReloader;
 import org.elasticsearch.xpack.core.ssl.SSLService;
 import org.elasticsearch.xpack.inference.action.TransportDeleteInferenceEndpointAction;
 import org.elasticsearch.xpack.inference.action.TransportGetInferenceDiagnosticsAction;
@@ -194,6 +198,16 @@ public class InferencePlugin extends Plugin implements ActionPlugin, ExtensibleP
         );
     }
 
+    private SSLService createSSLService(Environment environment, ResourceWatcherService resourceWatcherService) {
+        SSLService.addExternalSslMapping("xpack.inference.elastic.http.ssl.", environment.settings().getByPrefix("xpack.inference.elastic.http.ssl."));
+        final Map<String, SslConfiguration> sslConfigurations = SSLService.getSSLConfigurations(environment);
+        // Must construct the reloader before the SSL service so that we don't miss any config changes, see #54867
+        final SSLConfigurationReloader reloader = new SSLConfigurationReloader(resourceWatcherService, sslConfigurations.values());
+        final SSLService sslService = new SSLService(environment, sslConfigurations);
+        reloader.setSSLService(sslService);
+        return sslService;
+    }
+
     @Override
     public Collection<?> createComponents(PluginServices services) {
         var throttlerManager = new ThrottlerManager(settings, services.threadPool(), services.clusterService());
@@ -216,12 +230,7 @@ public class InferencePlugin extends Plugin implements ActionPlugin, ExtensibleP
         inferenceServices.add(this::getInferenceServiceFactories);
 
         if (ElasticInferenceServiceFeature.ELASTIC_INFERENCE_SERVICE_FEATURE_FLAG.isEnabled()) {
-            SSLService sslService = XPackPlugin.getSharedSslService();
-            final SslConfiguration sslConfiguration = sslService.getSSLConfiguration("xpack.security.inference.elastic.ssl.");
-            final SSLContext sslContext = sslService.sslContext(sslConfiguration);
-            final HostnameVerifier verifier = SSLService.getHostnameVerifier(sslConfiguration);
-
-            var elasticInferenceServiceHttpClientManager = ElasticInferenceServiceHttpClientManager.create(settings, services.threadPool(), services.clusterService(), throttlerManager, sslContext, verifier);
+            var elasticInferenceServiceHttpClientManager = ElasticInferenceServiceHttpClientManager.create(settings, services.threadPool(), services.clusterService(), throttlerManager);
             var elasticInferenceServiceRequestSenderFactory = new ElasticInferenceServiceRequestSender.Factory(
                 serviceComponents.get(), elasticInferenceServiceHttpClientManager, services.clusterService());
 

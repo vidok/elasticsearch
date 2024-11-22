@@ -82,6 +82,7 @@ public class HttpClient implements Closeable {
 
     private static CloseableHttpAsyncClient createAsyncClient(PoolingNHttpClientConnectionManager connectionManager) {
         HttpAsyncClientBuilder clientBuilder = HttpAsyncClientBuilder.create();
+
         clientBuilder.setConnectionManager(connectionManager);
         // The apache client will be shared across all connections because it can be expensive to create it
         // so we don't want to support cookies to avoid accidental authentication for unauthorized users

@@ -9,8 +9,6 @@ package org.elasticsearch.xpack.inference.external.http;
 
 import org.apache.http.config.Registry;
 import org.apache.http.config.RegistryBuilder;
-import org.apache.http.conn.ssl.NoopHostnameVerifier;
-import org.apache.http.conn.ssl.TrustAllStrategy;
 import org.apache.http.impl.nio.conn.PoolingNHttpClientConnectionManager;
 import org.apache.http.impl.nio.reactor.DefaultConnectingIOReactor;
 import org.apache.http.impl.nio.reactor.IOReactorConfig;
@@ -20,7 +18,6 @@ import org.apache.http.nio.conn.ssl.SSLIOSessionStrategy;
 import org.apache.http.nio.reactor.ConnectingIOReactor;
 import org.apache.http.nio.reactor.IOReactorException;
 import org.apache.http.pool.PoolStats;
-import org.apache.http.ssl.SSLContextBuilder;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.elasticsearch.ElasticsearchException;
@@ -30,6 +27,8 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.ssl.SslConfiguration;
 import org.elasticsearch.core.TimeValue;
 import org.elasticsearch.threadpool.ThreadPool;
+import org.elasticsearch.xpack.core.XPackPlugin;
+import org.elasticsearch.xpack.core.ssl.SSLConfigurationSettings;
 import org.elasticsearch.xpack.core.ssl.SSLService;
 import org.elasticsearch.xpack.inference.logging.ThrottlerManager;
 
@@ -37,14 +36,14 @@ import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
 import java.io.Closeable;
 import java.io.IOException;
-import java.security.KeyManagementException;
-import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.elasticsearch.core.Strings.format;
 
 public class ElasticInferenceServiceHttpClientManager implements Closeable {
+    public static final String SSL_CONFIGURATION_PREFIX = "xpack.inference.elastic.http.ssl.";
     private static final Logger logger = LogManager.getLogger(HttpClientManager.class);
     /**
      * The maximum number of total connections the connection pool can lease to all routes.
@@ -95,6 +94,17 @@ public class ElasticInferenceServiceHttpClientManager implements Closeable {
         Setting.Property.Dynamic
     );
 
+    public static final SSLConfigurationSettings SSL_CONFIGURATION_SETTINGS = SSLConfigurationSettings.withPrefix(
+        SSL_CONFIGURATION_PREFIX,
+        false
+    );
+
+    public static final Setting<Boolean> EIS_SSL_ENABLED = Setting.boolSetting(
+        SSL_CONFIGURATION_PREFIX + "enabled",
+        true,
+        Setting.Property.NodeScope
+    );
+
     private final ThreadPool threadPool;
     private final PoolingNHttpClientConnectionManager connectionManager;
     private IdleConnectionEvictor connectionEvictor;
@@ -107,11 +117,15 @@ public class ElasticInferenceServiceHttpClientManager implements Closeable {
         Settings settings,
         ThreadPool threadPool,
         ClusterService clusterService,
-        ThrottlerManager throttlerManager,
-        SSLContext sslContext,
-        HostnameVerifier verifier
+        ThrottlerManager throttlerManager
     ) {
-        PoolingNHttpClientConnectionManager connectionManager = createConnectionManager(sslContext, verifier);
+
+        SSLService sslService = XPackPlugin.getSharedSslService().createDynamicSSLService();
+        SSLIOSessionStrategy sslStrategy;
+        sslStrategy = sslService.sslIOSessionStrategy(settings.getByPrefix("xpack.inference.elastic.http.ssl."));
+
+        PoolingNHttpClientConnectionManager connectionManager = createConnectionManager(sslStrategy);
+
         return new ElasticInferenceServiceHttpClientManager(settings,
             connectionManager,
             threadPool,
@@ -145,7 +159,7 @@ public class ElasticInferenceServiceHttpClientManager implements Closeable {
         this.addSettingsUpdateConsumers(clusterService);
     }
 
-    private static PoolingNHttpClientConnectionManager createConnectionManager(SSLContext sslContext, HostnameVerifier verifier) {
+    private static PoolingNHttpClientConnectionManager createConnectionManager(SSLIOSessionStrategy sslStrategy) {
         ConnectingIOReactor ioReactor;
         try {
             var configBuilder = IOReactorConfig.custom().setSoKeepAlive(true);
@@ -158,7 +172,7 @@ public class ElasticInferenceServiceHttpClientManager implements Closeable {
 
         Registry<SchemeIOSessionStrategy> registry = RegistryBuilder.<SchemeIOSessionStrategy>create()
             .register("http", NoopIOSessionStrategy.INSTANCE)
-            .register("https", new SSLIOSessionStrategy(sslContext, verifier))
+            .register("https", sslStrategy)
             .build();
 
         /*
@@ -184,12 +198,15 @@ public class ElasticInferenceServiceHttpClientManager implements Closeable {
     }
 
     public static List<Setting<?>> getSettingsDefinitions() {
-        return List.of(
-            MAX_TOTAL_CONNECTIONS,
-            MAX_ROUTE_CONNECTIONS,
-            CONNECTION_EVICTION_THREAD_INTERVAL_SETTING,
-            CONNECTION_MAX_IDLE_TIME_SETTING
-        );
+        ArrayList<Setting<?>> settings = new ArrayList<>();
+        settings.add(MAX_TOTAL_CONNECTIONS);
+        settings.add(MAX_ROUTE_CONNECTIONS);
+        settings.add(CONNECTION_EVICTION_THREAD_INTERVAL_SETTING);
+        settings.add(CONNECTION_MAX_IDLE_TIME_SETTING);
+        settings.add(EIS_SSL_ENABLED);
+        settings.addAll(SSL_CONFIGURATION_SETTINGS.getEnabledSettings());
+
+        return settings;
     }
 
     public void start() {
