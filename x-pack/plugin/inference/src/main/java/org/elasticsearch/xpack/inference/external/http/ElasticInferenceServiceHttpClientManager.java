@@ -120,9 +120,9 @@ public class ElasticInferenceServiceHttpClientManager implements Closeable {
         ThrottlerManager throttlerManager
     ) {
 
-        SSLService sslService = XPackPlugin.getSharedSslService().createDynamicSSLService();
+        SSLService sslService = XPackPlugin.getSharedSslService();
         SSLIOSessionStrategy sslStrategy;
-        sslStrategy = sslService.sslIOSessionStrategy(settings.getByPrefix("xpack.inference.elastic.http.ssl."));
+        sslStrategy = sslService.sslIOSessionStrategy(sslService.getSSLConfiguration(SSL_CONFIGURATION_PREFIX));
 
         PoolingNHttpClientConnectionManager connectionManager = createConnectionManager(sslStrategy);
 

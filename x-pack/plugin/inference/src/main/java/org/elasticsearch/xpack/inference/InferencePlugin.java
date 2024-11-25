@@ -198,16 +198,6 @@ public class InferencePlugin extends Plugin implements ActionPlugin, ExtensibleP
         );
     }
 
-    private SSLService createSSLService(Environment environment, ResourceWatcherService resourceWatcherService) {
-        SSLService.addExternalSslMapping("xpack.inference.elastic.http.ssl.", environment.settings().getByPrefix("xpack.inference.elastic.http.ssl."));
-        final Map<String, SslConfiguration> sslConfigurations = SSLService.getSSLConfigurations(environment);
-        // Must construct the reloader before the SSL service so that we don't miss any config changes, see #54867
-        final SSLConfigurationReloader reloader = new SSLConfigurationReloader(resourceWatcherService, sslConfigurations.values());
-        final SSLService sslService = new SSLService(environment, sslConfigurations);
-        reloader.setSSLService(sslService);
-        return sslService;
-    }
-
     @Override
     public Collection<?> createComponents(PluginServices services) {
         var throttlerManager = new ThrottlerManager(settings, services.threadPool(), services.clusterService());
